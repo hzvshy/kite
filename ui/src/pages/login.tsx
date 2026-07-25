@@ -544,7 +544,7 @@ export function LoginPage() {
       </div>
 
       {/* Footer */}
-      <Footer />
+      <Footer showLinks={false} />
     </div>
   )
 }

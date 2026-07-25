@@ -24,7 +24,7 @@ const (
 type OAuthProvider interface {
 	GetAuthURL(state string) string
 	ExchangeCodeForToken(code string) (*TokenResponse, error)
-	GetUserInfo(accessToken string) (*model.User, error)
+	GetUserInfo(accessToken, tokenType string) (*model.User, error)
 	RefreshToken(refreshToken string) (*TokenResponse, error)
 	GetProviderName() string
 }
@@ -39,11 +39,13 @@ type OAuthConfig struct {
 
 // TokenResponse represents OAuth token response with refresh token support
 type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in,omitempty"`
-	Scope        string `json:"scope"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	TokenType        string `json:"token_type"`
+	ExpiresIn        int64  `json:"expires_in,omitempty"`
+	Scope            string `json:"scope"`
+	Error            string `json:"error,omitempty"`
+	ErrorDescription string `json:"error_description,omitempty"`
 }
 
 // Claims represents JWT claims with refresh token support
@@ -198,6 +200,18 @@ func (g *GenericProvider) makeTokenRequest(data url.Values) (*TokenResponse, err
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, err
 	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if tokenResp.ErrorDescription != "" {
+			return nil, fmt.Errorf("token request failed: %s", tokenResp.ErrorDescription)
+		}
+		return nil, fmt.Errorf("token request failed with HTTP status %d", resp.StatusCode)
+	}
+	if tokenResp.Error != "" {
+		return nil, fmt.Errorf("token request failed: %s", tokenResp.ErrorDescription)
+	}
+	if strings.TrimSpace(tokenResp.AccessToken) == "" {
+		return nil, errors.New("token response does not contain access_token")
+	}
 	return &tokenResp, nil
 }
 
@@ -223,8 +237,8 @@ func (g *GenericProvider) RefreshToken(refreshToken string) (*TokenResponse, err
 // ErrNotInAllowedGroups is returned when a user successfully authenticates but does not belong to any specified AllowedGroups.
 var ErrNotInAllowedGroups = errors.New("user is not in any of the allowed groups")
 
-func (g *GenericProvider) GetUserInfo(accessToken string) (*model.User, error) {
-	userInfo, err := g.fetchUserInfo(accessToken)
+func (g *GenericProvider) GetUserInfo(accessToken, tokenType string) (*model.User, error) {
+	userInfo, err := g.fetchUserInfo(accessToken, tokenType)
 	if err != nil {
 		return nil, err
 	}
@@ -250,13 +264,16 @@ func (g *GenericProvider) GetUserInfo(accessToken string) (*model.User, error) {
 	return user, nil
 }
 
-func (g *GenericProvider) fetchUserInfo(accessToken string) (map[string]interface{}, error) {
+func (g *GenericProvider) fetchUserInfo(accessToken, tokenType string) (map[string]interface{}, error) {
 	req, err := http.NewRequest("GET", g.UserInfoURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if strings.TrimSpace(tokenType) == "" {
+		tokenType = "Bearer"
+	}
+	req.Header.Set("Authorization", tokenType+" "+accessToken)
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}

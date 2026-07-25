@@ -201,7 +201,7 @@ func TestGenericProviderGetUserInfo(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tc.provider.GetUserInfo("access-token")
+			got, err := tc.provider.GetUserInfo("access-token", "")
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("GetUserInfo() error = %v, wantErr %v", err, tc.wantErr)
 			}

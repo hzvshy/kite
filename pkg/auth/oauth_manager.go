@@ -171,7 +171,7 @@ func (om *OAuthManager) RefreshJWT(c *gin.Context, tokenString string) (string, 
 		}
 
 		// Get updated user info with new access token
-		user, err := provider.GetUserInfo(tokenResp.AccessToken)
+		user, err := provider.GetUserInfo(tokenResp.AccessToken, tokenResp.TokenType)
 		if err != nil {
 			return "", err
 		}
