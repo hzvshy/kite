@@ -312,6 +312,7 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 	klog.V(1).Infof("OAuth Callback - Exchanging code for token with provider: %s", provider)
 	tokenResp, err := oauthProvider.ExchangeCodeForToken(code)
 	if err != nil {
+		klog.Warningf("OAuth Callback - Token exchange failed for provider %s: %v", provider, err)
 		c.Redirect(http.StatusFound, base+"/login?error=token_exchange_failed&reason=token_exchange_failed&provider="+provider)
 		return
 	}
@@ -319,6 +320,7 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 	klog.V(1).Infof("OAuth Callback - Getting user info with provider: %s", provider)
 	user, err := oauthProvider.GetUserInfo(tokenResp.AccessToken, tokenResp.TokenType)
 	if err != nil {
+		klog.Warningf("OAuth Callback - User info request failed for provider %s: %v", provider, err)
 		if errors.Is(err, ErrNotInAllowedGroups) {
 			c.Redirect(http.StatusFound, base+"/login?error=insufficient_permissions&reason=not_in_allowed_groups&provider="+provider)
 			return

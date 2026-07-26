@@ -204,9 +204,15 @@ func (g *GenericProvider) makeTokenRequest(data url.Values) (*TokenResponse, err
 		if tokenResp.ErrorDescription != "" {
 			return nil, fmt.Errorf("token request failed: %s", tokenResp.ErrorDescription)
 		}
+		if tokenResp.Error != "" {
+			return nil, fmt.Errorf("token request failed: %s", tokenResp.Error)
+		}
 		return nil, fmt.Errorf("token request failed with HTTP status %d", resp.StatusCode)
 	}
 	if tokenResp.Error != "" {
+		if tokenResp.ErrorDescription == "" {
+			return nil, fmt.Errorf("token request failed: %s", tokenResp.Error)
+		}
 		return nil, fmt.Errorf("token request failed: %s", tokenResp.ErrorDescription)
 	}
 	if strings.TrimSpace(tokenResp.AccessToken) == "" {
