@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -180,10 +182,13 @@ func (g *GenericProvider) GetAuthURL(state string) string {
 	params.Add("state", state)
 	params.Add("response_type", "code")
 
-	return g.AuthURL + "?" + params.Encode()
+	authURL := g.AuthURL + "?" + params.Encode()
+	klog.Infof("OAuth authorization request provider=%s url=%s client_id=%s redirect_uri=%s scope=%q response_type=%s state=%s", g.Name, g.AuthURL, g.Config.ClientID, g.Config.RedirectURL, g.Config.Scopes, params.Get("response_type"), fingerprint(state))
+	return authURL
 }
 
 func (g *GenericProvider) makeTokenRequest(data url.Values) (*TokenResponse, error) {
+	klog.Infof("OAuth token request provider=%s url=%s method=POST content_type=application/x-www-form-urlencoded grant_type=%s client_id=%s client_secret=%s code=%s redirect_uri=%s refresh_token=%s", g.Name, g.TokenURL, data.Get("grant_type"), g.Config.ClientID, secretInfo(data.Get("client_secret")), secretInfo(data.Get("code")), data.Get("redirect_uri"), secretInfo(data.Get("refresh_token")))
 	req, err := http.NewRequest("POST", g.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
@@ -196,10 +201,16 @@ func (g *GenericProvider) makeTokenRequest(data url.Values) (*TokenResponse, err
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
+	klog.Infof("OAuth token response provider=%s status=%d content_type=%s body_length=%d", g.Name, resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+	var tokenResp TokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, err
+	}
+	klog.Infof("OAuth token response fields provider=%s access_token=%s token_type=%q expires_in=%d refresh_token=%s scope=%q error=%q error_description=%q", g.Name, secretInfo(tokenResp.AccessToken), tokenResp.TokenType, tokenResp.ExpiresIn, secretInfo(tokenResp.RefreshToken), tokenResp.Scope, tokenResp.Error, tokenResp.ErrorDescription)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		if tokenResp.ErrorDescription != "" {
 			return nil, fmt.Errorf("token request failed: %s", tokenResp.ErrorDescription)
@@ -281,6 +292,7 @@ func (g *GenericProvider) fetchUserInfo(accessToken, tokenType string) (map[stri
 	}
 	req.Header.Set("Authorization", tokenType+" "+accessToken)
 	req.Header.Set("Accept", "application/json")
+	klog.Infof("OAuth userinfo request provider=%s url=%s method=GET authorization_scheme=%s access_token=%s accept=application/json", g.Name, g.UserInfoURL, tokenType, secretInfo(accessToken))
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -291,12 +303,44 @@ func (g *GenericProvider) fetchUserInfo(accessToken, tokenType string) (map[stri
 		_ = resp.Body.Close()
 	}()
 
-	var userInfo map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
+	}
+	klog.Infof("OAuth userinfo response provider=%s status=%d content_type=%s body_length=%d", g.Name, resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+	var userInfo map[string]interface{}
+	if err := json.Unmarshal(body, &userInfo); err != nil {
+		return nil, err
+	}
+	if message, ok := userInfo["message"].(string); ok {
+		klog.Infof("OAuth userinfo response fields provider=%s keys=%v code=%v action=%v message=%q", g.Name, mapKeys(userInfo), userInfo["code"], userInfo["action"], message)
+	} else {
+		klog.Infof("OAuth userinfo response fields provider=%s keys=%v", g.Name, mapKeys(userInfo))
 	}
 
 	return userInfo, nil
+}
+
+func secretInfo(value string) string {
+	if value == "" {
+		return "<empty>"
+	}
+	return fmt.Sprintf("<redacted len=%d sha256=%x>", len(value), sha256.Sum256([]byte(value)))
+}
+
+func fingerprint(value string) string {
+	if value == "" {
+		return "<empty>"
+	}
+	return fmt.Sprintf("<sha256=%x>", sha256.Sum256([]byte(value)))
+}
+
+func mapKeys(values map[string]interface{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 // unwrapDataField returns the nested "data" map if present.
