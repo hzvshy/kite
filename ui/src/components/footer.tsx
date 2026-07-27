@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 
-export function Footer() {
+export function Footer({ showLinks = true }: { showLinks?: boolean }) {
   const { t } = useTranslation()
   return (
     <footer className="border-t">
@@ -9,18 +9,24 @@ export function Footer() {
           <p className="text-sm text-gray-500">
             {t('login.footer', { year: new Date().getFullYear() })}
           </p>
-          <div className="flex space-x-6 text-sm text-gray-500">
-            <a href="https://kite.zzde.me" target="_blank" className="app-link">
-              {t('login.documentation')}
-            </a>
-            <a
-              href="https://github.com/zxh326/kite"
-              target="_blank"
-              className="app-link"
-            >
-              GitHub
-            </a>
-          </div>
+          {showLinks && (
+            <div className="flex space-x-6 text-sm text-gray-500">
+              <a
+                href="https://kite.zzde.me"
+                target="_blank"
+                className="app-link"
+              >
+                {t('login.documentation')}
+              </a>
+              <a
+                href="https://github.com/zxh326/kite"
+                target="_blank"
+                className="app-link"
+              >
+                GitHub
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </footer>
